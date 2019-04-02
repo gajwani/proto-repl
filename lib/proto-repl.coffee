@@ -103,6 +103,7 @@ module.exports = ProtoRepl =
   repl: null
   toolbar: null
   ink: null
+  lastTestCommand: null
 
   saveRecallFeature: null
   extensionsFeature: null
@@ -138,6 +139,7 @@ module.exports = ProtoRepl =
       'proto-repl:run-tests-in-namespace': => @runTestsInNamespace()
       'proto-repl:run-test-under-cursor': => @runTestUnderCursor()
       'proto-repl:run-all-tests': => @runAllTests()
+      'proto-repl:run-tests-previously-run': => @runTestsPreviouslyRun()
       'proto-repl:print-var-documentation': => @printVarDocumentation()
       'proto-repl:print-var-code': => @printVarCode()
       'proto-repl:list-ns-vars': => @listNsVars()
@@ -575,7 +577,12 @@ module.exports = ProtoRepl =
         @stderr("Running tests is not supported yet in self hosted REPL.")
       else
         code = "(clojure.test/run-tests)"
-        if atom.config.get("proto-repl.refreshBeforeRunningTestFile")
+        @lastTestCommand = {
+          code: code,
+          refreshNamespaces: atom.config.get("proto-repl.refreshBeforeRunningTestFile")
+        }
+
+        if @lastTestCommand.refreshNamespaces
           @refreshNamespaces =>
             @executeCodeInNs(code)
         else
@@ -588,7 +595,12 @@ module.exports = ProtoRepl =
       else
         if testName = @getClojureVarUnderCursor(editor)
           code = "(do (clojure.test/test-vars [#'#{testName}]) (println \"tested #{testName}\"))"
-          if atom.config.get("proto-repl.refreshBeforeRunningSingleTest")
+          @lastTestCommand = {
+            code: code,
+            refreshNamespaces: atom.config.get("proto-repl.refreshBeforeRunningSingleTest")
+          }
+
+          if @lastTestCommand.refreshNamespaces
             @refreshNamespaces =>
               @executeCodeInNs(code)
           else
@@ -600,7 +612,20 @@ module.exports = ProtoRepl =
     else
       @refreshNamespaces =>
         # Tests are only run if the refresh is successful.
+        code = "(def all-tests-future (future (time (clojure.test/run-all-tests))))"
+        @lastTestCommand = {code: code, refreshNamespaces: true}
         @executeCode("(def all-tests-future (future (time (clojure.test/run-all-tests))))")
+
+  runTestsPreviouslyRun: ->
+    if editor = atom.workspace.getActiveTextEditor()
+      if @isSelfHosted()
+        @stderr("Running tests is not supported yet in self hosted REPL.")
+      else
+        if @lastTestCommand?.refreshNamespaces
+          @refreshNamespaces =>
+            @executeCode(@lastTestCommand.code)
+        else
+          @executeCode(@lastTestCommand.code)
 
   printVarDocumentation: ->
     if editor = atom.workspace.getActiveTextEditor()
